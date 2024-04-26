@@ -108,6 +108,7 @@ displacement.interactivePlane = new THREE.Mesh(
   new THREE.PlaneGeometry(10, 10),
   new THREE.MeshBasicMaterial({ color: "red" })
 )
+displacement.interactivePlane.visible = false
 scene.add(displacement.interactivePlane)
 
 // Raycaster
@@ -115,6 +116,7 @@ displacement.raycaster = new THREE.Raycaster()
 
 // Coordinates
 displacement.screenCursor = new THREE.Vector2(999, 999)
+displacement.canvasCursor = new THREE.Vector2(999, 999)
 
 // Mouse move
 window.addEventListener("pointermove", (event) => {
@@ -123,10 +125,27 @@ window.addEventListener("pointermove", (event) => {
   displacement.screenCursor.y = -(event.clientY / sizes.height) * 2 + 1
 })
 
+// make texture out of the canvas
+displacement.texture = new THREE.CanvasTexture(displacement.canvas)
+
 /**
  * Particles
  */
 const particlesGeometry = new THREE.PlaneGeometry(10, 10, 128, 128)
+
+// RANDOM INTENSITY
+const intensitiesArray = new Float32Array(
+  particlesGeometry.attributes.position.count
+)
+
+for (let i = 0; i < particlesGeometry.attributes.position.count; i++) {
+  intensitiesArray[i] = Math.random()
+}
+
+particlesGeometry.setAttribute(
+  "aIntensity",
+  new THREE.BufferAttribute(intensitiesArray, 1)
+)
 
 const particlesMaterial = new THREE.ShaderMaterial({
   vertexShader: particlesVertexShader,
@@ -139,6 +158,7 @@ const particlesMaterial = new THREE.ShaderMaterial({
       )
     ),
     uPictureTexture: new THREE.Uniform(textureLoader.load("./picture-3.png")),
+    uDisplacementTexture: new THREE.Uniform(displacement.texture),
   },
 })
 const particles = new THREE.Points(particlesGeometry, particlesMaterial)
@@ -159,8 +179,40 @@ const tick = () => {
   )
 
   if (intersections.length) {
-    console.log(intersections[0])
+    // When intersecting with a geometry including a uv attribute, we get the uv coordinates. No need for complex calculations.
+    const uv = intersections[0].uv
+
+    // Update canvas cursor
+    // update the canvasCursor using the uv and multiply by the canvas.width and canvas.height so that we transform from normalized coordinates to canvas coordinates:
+    displacement.canvasCursor.x = uv.x * displacement.canvas.width
+    displacement.canvasCursor.y = (1.0 - uv.y) * displacement.canvas.height
   }
+
+  // Fade out CANVAS WHEN CURSOR IS OVER THE PLANE
+  displacement.context.globalCompositeOperation = "source-over"
+  displacement.context.globalAlpha = 0.02
+  displacement.context.fillRect(
+    0,
+    0,
+    displacement.canvas.width,
+    displacement.canvas.height
+  )
+
+  // call drawImage to draw the glow image at the canvasCursor coordinates
+  // Draw glow
+  const glowSize = displacement.canvas.width * 0.25
+  displacement.context.globalCompositeOperation = "lighten"
+  displacement.context.globalAlpha = 1
+  displacement.context.drawImage(
+    displacement.glowImage,
+    displacement.canvasCursor.x - glowSize * 0.5,
+    displacement.canvasCursor.y - glowSize * 0.5,
+    glowSize,
+    glowSize
+  )
+
+  // Texture
+  displacement.texture.needsUpdate = true
 
   // Render
   renderer.render(scene, camera)
